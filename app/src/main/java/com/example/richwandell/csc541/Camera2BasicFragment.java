@@ -24,6 +24,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Point;
@@ -57,6 +58,7 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -73,6 +75,9 @@ import java.util.concurrent.TimeUnit;
 
 public class Camera2BasicFragment extends Fragment
     implements View.OnClickListener, ActivityCompat.OnRequestPermissionsResultCallback {
+
+
+    private final OnGetImageListener mOnGetPreviewListener = new OnGetImageListener();
 
     /**
      * Conversion from screen rotation to JPEG orientation.
@@ -289,6 +294,7 @@ public class Camera2BasicFragment extends Fragment
         private void process(CaptureResult result) {
             switch (mState) {
                 case STATE_PREVIEW: {
+
                     // We have nothing to do when the camera preview is working normally.
                     break;
                 }
@@ -347,6 +353,9 @@ public class Camera2BasicFragment extends Fragment
         }
 
     };
+    private ImageView mImageView;
+
+
 
     /**
      * Shows a {@link Toast} on the UI thread.
@@ -429,6 +438,7 @@ public class Camera2BasicFragment extends Fragment
         view.findViewById(R.id.picture).setOnClickListener(this);
         view.findViewById(R.id.info).setOnClickListener(this);
         mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
+        mImageView = (ImageView)view.findViewById(R.id.the_preview_image);
     }
 
     @Override
@@ -498,7 +508,7 @@ public class Camera2BasicFragment extends Fragment
 
                 // We don't use a front facing camera in this sample.
                 Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
-                if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                if (facing.compareTo(CameraCharacteristics.LENS_FACING_BACK) == 0) {
                     continue;
                 }
 
@@ -653,6 +663,11 @@ public class Camera2BasicFragment extends Fragment
         mBackgroundThread = new HandlerThread("CameraBackground");
         mBackgroundThread.start();
         mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+
+
+//        inferenceThread = new HandlerThread("InferenceThread");
+//        inferenceThread.start();
+//        inferenceHandler = new Handler(inferenceThread.getLooper());
     }
 
     /**
@@ -687,6 +702,23 @@ public class Camera2BasicFragment extends Fragment
             mPreviewRequestBuilder
                 = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(surface);
+
+            // Create the reader for the preview frames.
+            mImageReader =
+                ImageReader.newInstance(
+                    mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 2);
+
+            mImageReader.setOnImageAvailableListener(mOnGetPreviewListener, mBackgroundHandler);
+            mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
+
+            mOnGetPreviewListener.initialize(
+                getActivity().getApplicationContext(),
+                getActivity().getAssets(),
+                mBackgroundHandler,
+                mImageView,
+                getActivity(),
+                mTextureView
+            );
 
             // Here, we create a CameraCaptureSession for camera preview.
             mCameraDevice.createCaptureSession(Arrays.asList(surface, mImageReader.getSurface()),
