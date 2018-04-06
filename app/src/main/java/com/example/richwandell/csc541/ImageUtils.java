@@ -1,5 +1,8 @@
 package com.example.richwandell.csc541;
 
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.media.Image;
 
@@ -7,13 +10,53 @@ import org.bytedeco.javacpp.Loader;
 import org.bytedeco.javacpp.opencv_java;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgcodecs.Imgcodecs;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 
 public class ImageUtils {
 
     static {
         Loader.load(opencv_java.class);
+    }
+
+    public static Bitmap matToBitmap(Mat m) {
+        int mWidth = m.width();
+        int mHeight = m.height();
+
+
+        byte[] imageInBytes = new byte[(int) (m.total() * m.channels())];
+        m.get(0, 0, imageInBytes);
+
+
+        Bitmap bitmap = BitmapFactory.decodeByteArray(imageInBytes, 0, imageInBytes.length);
+
+        return bitmap;
+    }
+
+    public static Mat loadResource(Context context, int resourceId, int flags) throws IOException
+    {
+        InputStream is = context.getResources().openRawResource(resourceId);
+        ByteArrayOutputStream os = new ByteArrayOutputStream(is.available());
+
+        byte[] buffer = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = is.read(buffer)) != -1) {
+            os.write(buffer, 0, bytesRead);
+        }
+        is.close();
+
+        Mat encoded = new Mat(1, os.size(), CvType.CV_8U);
+        encoded.put(0, 0, os.toByteArray());
+        os.close();
+
+        Mat decoded = Imgcodecs.imdecode(encoded, flags);
+        encoded.release();
+
+        return decoded;
     }
 
     /**
