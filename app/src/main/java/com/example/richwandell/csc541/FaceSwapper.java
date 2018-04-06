@@ -1,9 +1,13 @@
 package com.example.richwandell.csc541;
 
+import android.util.Log;
+
 import org.bytedeco.javacpp.Loader;
 import org.bytedeco.javacpp.opencv_core;
 import org.bytedeco.javacpp.opencv_java;
+import org.nd4j.linalg.api.blas.Lapack;
 import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.factory.BlasWrapper;
 import org.nd4j.linalg.factory.Nd4j;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -15,6 +19,9 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.bytedeco.javacpp.opencv_core.MatExpr;
+import org.yaml.snakeyaml.nodes.Tag;
+
+import static com.example.richwandell.csc541.MainActivity.TAG;
 import static org.opencv.imgproc.Imgproc.CV_WARP_INVERSE_MAP;
 
 /**
@@ -125,7 +132,10 @@ public class FaceSwapper {
 
 //        output_im = im1 * (1.0 - combined_mask) + warped_im2 * combined_mask
         this.swappedImage = outputImage;
+    }
 
+    public Mat getSwappedImage() {
+        return this.swappedImage;
     }
 
     private Mat getCombinedMask(Mat mask1, Mat warpedMask2) {
@@ -212,24 +222,7 @@ public class FaceSwapper {
         Imgproc.fillConvexPoly(im, hullPoints, new Scalar(255, 255, 255));
     }
 
-    public INDArray transformationFromPoints(INDArray points1, INDArray points2) {
-
-
-        //c1 should be [[ 540.95348837  613.27906977]]
-        //c2 should be [[ 228.55813953  171.95348837]]
-        //s1 should be 48.3510128486
-        //s2 should be 33.236032497
-        //U should be [[ 0.08987633  0.99595293] [ 0.99595293 -0.08987633]]
-        //S should be [55.9960492496, 29.4161457185]
-        //VT should be [[ 0.08543031  0.99634415] [ 0.99634415 -0.08543031]]
-        //R should be [[ 0.99999004 -0.00446319] [ 0.00446319  0.99999004]]
-        // M should be [[  6.87383769e-01  -3.06795691e-03  -1.41402995e+02] [  3.06795691e-03   6.87383769e-01  -2.51264212e+02] [  0.00000000e+00   0.00000000e+00   1.00000000e+00]]
-        //mul should be [[ 29.61993757   2.51146076] [  2.13024966  55.79140669]]
-        //hs1 should be [[ 0.68738377 -0.00306796] [ 0.00306796  0.68738377]]
-        //hs2 should be [[-141.40299458] [-251.26421225]]
-        //hs should be [[  6.87383769e-01  -3.06795691e-03  -1.41402995e+02] [  3.06795691e-03   6.87383769e-01  -2.51264212e+02]]
-        //done should be [[  6.87383769e-01  -3.06795691e-03  -1.41402995e+02] [  3.06795691e-03   6.87383769e-01  -2.51264212e+02] [  0.00000000e+00   0.00000000e+00   1.00000000e+00]]
-
+    private INDArray transformationFromPoints(INDArray points1, INDArray points2) {
         INDArray c1 = points1.mean(0);
         INDArray c2 = points2.mean(0);
 
@@ -250,9 +243,19 @@ public class FaceSwapper {
         INDArray S = Nd4j.zeros(1, nRows);
         INDArray U = Nd4j.zeros(nRows, nRows);
         INDArray V = Nd4j.zeros(nColumns, nColumns);
-        Nd4j.getBlasWrapper().lapack().gesvd(A, S, U, V);
 
-        INDArray R = U.mmul(V).transpose();
+
+        Mat aMat = indArrayToMat(A);
+        Mat sMat = indArrayToMat(S);
+        Mat uMat = indArrayToMat(U);
+        Mat vMat = indArrayToMat(V);
+
+        Core.SVDecomp(aMat, sMat, uMat, vMat);
+
+        INDArray uInd = matToIndArray(uMat);
+        INDArray vInd = matToIndArray(vMat);
+
+        INDArray R = uInd.mmul(vInd).transpose();
         INDArray hs1 = R.mul(s2.floatValue() / s1.floatValue());
         INDArray mul = hs1.mmul(c1.transpose());
         INDArray hs2 = c2.transpose().sub(mul);
@@ -265,5 +268,33 @@ public class FaceSwapper {
         );
 
         return done;
+    }
+
+    private Mat indArrayToMat(INDArray a) {
+        int[] shape = a.shape();
+        Mat m = new Mat(shape[0], shape[1], CvType.CV_64FC1);
+
+        for(int i = 0; i < shape[0]; i++) {
+            for(int j = 0; j < shape[1]; j++) {
+                m.put(i, j, a.getFloat(i, j));
+            }
+        }
+
+        return m;
+    }
+
+    private INDArray matToIndArray(Mat m) {
+        int width = m.width();
+        int height = m.height();
+
+        INDArray ind = Nd4j.create(height, width);
+
+        for(int i = 0; i < height; i++) {
+            for(int j = 0; j < width; j++) {
+                double[] value = m.get(i, j);
+                ind.put(i, j, value[0]);
+            }
+        }
+        return ind;
     }
 }

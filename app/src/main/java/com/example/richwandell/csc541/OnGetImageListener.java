@@ -40,10 +40,15 @@ import org.opencv.core.Mat;
 import org.opencv.highgui.HighGui;
 import org.opencv.imgcodecs.Imgcodecs;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.example.richwandell.csc541.ImageUtils.bitmapToMat;
+import static com.example.richwandell.csc541.ImageUtils.loadResource;
+import static com.example.richwandell.csc541.ImageUtils.matToBitmap;
 import static org.bytedeco.javacv.Java2DFrameUtils.*;
+import static org.opencv.imgcodecs.Imgcodecs.CV_LOAD_IMAGE_COLOR;
 
 /**
  * Class that takes in preview frames and converts the image to Bitmaps to process with dlib lib.
@@ -82,6 +87,7 @@ public class OnGetImageListener implements OnImageAvailableListener {
     private INDArray bradIm;
     private Mat currentImageMat;
     private Mat bradsFaceMat;
+    private Bitmap bradsFaceBitmap;
 
 
     public void initialize(
@@ -107,44 +113,17 @@ public class OnGetImageListener implements OnImageAvailableListener {
         mFaceLandmardkPaint.setStrokeWidth(2);
         mFaceLandmardkPaint.setStyle(Paint.Style.STROKE);
 
-        bradsFace = BitmapFactory.decodeResource(activity.getResources(), R.drawable.brad_face);
+        try {
+            bradsFaceMat = loadResource(context, R.drawable.brad_face, CV_LOAD_IMAGE_COLOR);
+            bradsFaceBitmap = matToBitmap(bradsFaceMat);
 
-        int orgWidth = bradsFace.getWidth();
-        int orgHeight = bradsFace.getHeight();
-        int[] pixels = new int[orgWidth * orgHeight];
-        bradsFace.getPixels(pixels, 0, orgWidth, 0, 0, orgWidth, orgHeight);
-
-        Mat m = new Mat(orgHeight, orgWidth, CvType.CV_8UC4);
-
-        int id = 0;
-        for(int row = 0; row < orgHeight; row++) {
-            for(int col = 0; col < orgWidth; col++) {
-                int color = pixels[id];
-                int a = (color >> 24) & 0xff; // or color >>> 24
-                int r = (color >> 16) & 0xff;
-                int g = (color >>  8) & 0xff;
-                int b = (color      ) & 0xff;
-
-                m.put(row, col, new int[]{a, r, g, b});
-                id++;
+            FaceDet faceDet = new FaceDet(Constants.getFaceShapeModelPath());
+            this.bradsFaceResults = faceDet.detect(bradsFaceBitmap);
+            if(this.bradsFaceResults.size() > 0) {
+                this.bPoints = this.bradsFaceResults.get(0).getFaceLandmarks();
             }
-        }
-
-//        m.put(0, 0, pixels);
-
-
-
-//
-
-//        Mat bMat = new Mat(bradsFace.getHeight(), bradsFace.getWidth(), bradsFace.)
-
-        this.bradsFaceMat = Imgcodecs.imread(
-            activity.getResources().getDrawable(R.drawable.brad_face).toString());
-
-        FaceDet faceDet = new FaceDet(Constants.getFaceShapeModelPath());
-        this.bradsFaceResults = faceDet.detect(bradsFace);
-        if(this.bradsFaceResults.size() > 0) {
-            this.bPoints = this.bradsFaceResults.get(0).getFaceLandmarks();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -166,79 +145,76 @@ public class OnGetImageListener implements OnImageAvailableListener {
 
     @Override
     public void onImageAvailable(final ImageReader reader) {
-        drawToImageView(bradsFace);
-        Image image = null;
-        return;
 
-//        try {
-//            image = reader.acquireLatestImage();
-//
-//
-//            if (image == null) {
-//                return;
-//            }
-//
-//            // No mutex needed as this method is not reentrant.
-//            if (mIsComputing) {
-//                image.close();
-//                return;
-//            }
-//            mIsComputing = true;
-//
-//            final Plane[] planes = image.getPlanes();
-//
-//            // Initialize the storage bitmaps once when the resolution is known.
-//            if (mPreviewWidth != image.getWidth() || mPreviewHeight != image.getHeight()) {
-//                mPreviewWidth = image.getWidth();
-//                mPreviewHeight = image.getHeight();
-//
-//                Log.d(TAG, String.format("Initializing at size %dx%d", mPreviewWidth, mPreviewHeight));
-//                mRGBBytes = new int[mPreviewWidth * mPreviewHeight];
-//                mRGBframeBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
-//                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
-//
-//                mYUVBytes = new byte[planes.length][];
-//                for (int i = 0; i < planes.length; ++i) {
-//                    mYUVBytes[i] = new byte[planes[i].getBuffer().capacity()];
-//                }
-//            }
-//
-//            for (int i = 0; i < planes.length; ++i) {
-//                planes[i].getBuffer().get(mYUVBytes[i]);
-//            }
-//
-//            final int yRowStride = planes[0].getRowStride();
-//            final int uvRowStride = planes[1].getRowStride();
-//            final int uvPixelStride = planes[1].getPixelStride();
-//            ImageUtils.convertYUV420ToARGB8888(
-//                mYUVBytes[0],
-//                mYUVBytes[1],
-//                mYUVBytes[2],
-//                mRGBBytes,
-//                mPreviewWidth,
-//                mPreviewHeight,
-//                yRowStride,
-//                uvRowStride,
-//                uvPixelStride,
-//                false);
-//
-//            mRGBframeBitmap.setPixels(mRGBBytes, 0, mPreviewWidth, 0, 0, mPreviewWidth, mPreviewHeight);
-//
-//
-//            this.currentImageMat = arrayToMat(mRGBBytes);
-//
-//
-//            image.close();
-//        } catch (final Exception e) {
-//            if (image != null) {
-//                image.close();
-//            }
-//            Log.e(TAG, "Exception!", e);
-//            Trace.endSection();
-//            return;
-//        }
-//
-//        mInferenceHandler.post(this::postImageUpdate);
+        Image image = null;
+
+        try {
+            image = reader.acquireLatestImage();
+
+
+            if (image == null) {
+                return;
+            }
+
+            // No mutex needed as this method is not reentrant.
+            if (mIsComputing) {
+                image.close();
+                return;
+            }
+            mIsComputing = true;
+
+            final Plane[] planes = image.getPlanes();
+
+            // Initialize the storage bitmaps once when the resolution is known.
+            if (mPreviewWidth != image.getWidth() || mPreviewHeight != image.getHeight()) {
+                mPreviewWidth = image.getWidth();
+                mPreviewHeight = image.getHeight();
+
+                Log.d(TAG, String.format("Initializing at size %dx%d", mPreviewWidth, mPreviewHeight));
+                mRGBBytes = new int[mPreviewWidth * mPreviewHeight];
+                mRGBframeBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
+                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
+
+                mYUVBytes = new byte[planes.length][];
+                for (int i = 0; i < planes.length; ++i) {
+                    mYUVBytes[i] = new byte[planes[i].getBuffer().capacity()];
+                }
+            }
+
+            for (int i = 0; i < planes.length; ++i) {
+                planes[i].getBuffer().get(mYUVBytes[i]);
+            }
+
+            final int yRowStride = planes[0].getRowStride();
+            final int uvRowStride = planes[1].getRowStride();
+            final int uvPixelStride = planes[1].getPixelStride();
+            ImageUtils.convertYUV420ToARGB8888(
+                mYUVBytes[0],
+                mYUVBytes[1],
+                mYUVBytes[2],
+                mRGBBytes,
+                mPreviewWidth,
+                mPreviewHeight,
+                yRowStride,
+                uvRowStride,
+                uvPixelStride,
+                false);
+
+            mRGBframeBitmap.setPixels(mRGBBytes, 0, mPreviewWidth, 0, 0, mPreviewWidth, mPreviewHeight);
+            currentImageMat = bitmapToMat(mRGBframeBitmap, CV_LOAD_IMAGE_COLOR);
+
+
+            image.close();
+        } catch (final Exception e) {
+            if (image != null) {
+                image.close();
+            }
+            Log.e(TAG, "Exception!", e);
+            Trace.endSection();
+            return;
+        }
+
+        mInferenceHandler.post(this::postImageUpdate);
 
     }
 
@@ -257,9 +233,9 @@ public class OnGetImageListener implements OnImageAvailableListener {
         // Draw on bitmap
         if (results != null) {
             if(results.size() > 0) {
-                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
+//                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
 
-                Canvas canvas = new Canvas(mMutableBitmap);
+//                Canvas canvas = new Canvas(mMutableBitmap);
 
                 ArrayList<Point> landmarks = null;
                 for (final VisionDetRet ret : results) {
@@ -287,21 +263,21 @@ public class OnGetImageListener implements OnImageAvailableListener {
                 if(landmarks != null) {
                     Bitmap newImage = processResult(landmarks, currentImageMat);
 
-                    Matrix matrix = new Matrix();
-                    matrix.postScale(
-                        -1,
-                        1,
-                        mPreviewWidth / 2,
-                        mPreviewHeight / 2);
-                    mMutableBitmap = Bitmap.createBitmap(mMutableBitmap,
-                        0,
-                        0,
-                        mMutableBitmap.getWidth(),
-                        mMutableBitmap.getHeight(),
-                        matrix,
-                        true);
+//                    Matrix matrix = new Matrix();
+//                    matrix.postScale(
+//                        -1,
+//                        1,
+//                        mPreviewWidth / 2,
+//                        mPreviewHeight / 2);
+//                    mMutableBitmap = Bitmap.createBitmap(mMutableBitmap,
+//                        0,
+//                        0,
+//                        mMutableBitmap.getWidth(),
+//                        mMutableBitmap.getHeight(),
+//                        matrix,
+//                        true);
 
-                    drawToImageView(mMutableBitmap);
+                    drawToImageView(newImage);
                 }
             }
 
@@ -314,7 +290,8 @@ public class OnGetImageListener implements OnImageAvailableListener {
         INDArray points1 = pointsToNd4j(dPoints);
         INDArray points2 = pointsToNd4j(bPoints);
         FaceSwapper f = new FaceSwapper(currentImageMat, bradsFaceMat, points1, points2);
-        return mMutableBitmap;
+        Mat swappedImage = f.getSwappedImage();
+        return matToBitmap(swappedImage);
     }
 
     private INDArray pointsToNd4j(ArrayList<Point> points) {

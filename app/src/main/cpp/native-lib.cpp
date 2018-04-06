@@ -10,6 +10,5 @@ Java_com_example_richwandell_csc541_MainActivity_stringFromJNI(
         jobject /* this */) {
     std::string hello = "Hello from C++";
 
-
     return env->NewStringUTF(hello.c_str());
 }
