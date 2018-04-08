@@ -287,11 +287,21 @@ public class OnGetImageListener implements OnImageAvailableListener {
     }
 
     private Bitmap processResult(ArrayList<Point> dPoints, Mat currentImageMat) {
-        INDArray points1 = pointsToNd4j(dPoints);
-        INDArray points2 = pointsToNd4j(bPoints);
+        float[][] points1 = pointsToFloat(dPoints);
+        float[][] points2 = pointsToFloat(bPoints);
         FaceSwapper f = new FaceSwapper(currentImageMat, bradsFaceMat, points1, points2);
         Mat swappedImage = f.getSwappedImage();
         return matToBitmap(swappedImage);
+    }
+
+    private float[][] pointsToFloat(ArrayList<Point> points) {
+        float[][] f = new float[points.size()][2];
+        for(int i = 0; i < points.size(); i++) {
+            Point p = points.get(i);
+            f[i][0] = p.x;
+            f[i][1] = p.y;
+        }
+        return f;
     }
 
     private INDArray pointsToNd4j(ArrayList<Point> points) {
