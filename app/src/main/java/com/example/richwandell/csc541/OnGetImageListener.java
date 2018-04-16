@@ -12,18 +12,15 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Point;
-import android.graphics.Rect;
 import android.media.Image;
 import android.media.Image.Plane;
 import android.media.ImageReader;
 import android.media.ImageReader.OnImageAvailableListener;
 import android.os.Handler;
-import android.os.Trace;
 import android.util.Log;
+import android.util.Size;
 import android.widget.ImageView;
 
-import com.twelvemonkeys.image.BufferedImageFactory;
-import com.twelvemonkeys.imageio.stream.BufferedImageInputStream;
 import com.tzutalin.dlib.Constants;
 import com.tzutalin.dlib.FaceDet;
 import com.tzutalin.dlib.VisionDetRet;
@@ -31,23 +28,16 @@ import com.tzutalin.dlibtest.ImageUtils;
 
 import org.bytedeco.javacpp.Loader;
 import org.bytedeco.javacpp.opencv_java;
-import org.bytedeco.javacv.AndroidFrameConverter;
-import org.datavec.image.loader.AndroidNativeImageLoader;
-import org.nd4j.linalg.api.ndarray.INDArray;
-import org.nd4j.linalg.factory.Nd4j;
-import org.opencv.core.CvType;
+import org.opencv.android.Utils;
 import org.opencv.core.Mat;
-import org.opencv.highgui.HighGui;
 import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.example.richwandell.csc541.ImageUtils.bitmapToMat;
 import static com.example.richwandell.csc541.ImageUtils.loadResource;
-import static com.example.richwandell.csc541.ImageUtils.matToBitmap;
-import static org.bytedeco.javacv.Java2DFrameUtils.*;
 import static org.opencv.imgcodecs.Imgcodecs.CV_LOAD_IMAGE_COLOR;
 
 /**
@@ -69,11 +59,11 @@ public class OnGetImageListener implements OnImageAvailableListener {
     private Bitmap mMutableBitmap = null;
 
     private boolean mIsComputing = false;
-    private Handler mInferenceHandler;
     private Activity activity;
     private AutoFitTextureView textureView;
+    private int rotation;
+    private int sensorOrientation;
 
-    private Context mContext;
     private FaceDet mFaceDet;
 
 
@@ -83,29 +73,40 @@ public class OnGetImageListener implements OnImageAvailableListener {
     private Bitmap bradsFace;
     private List<VisionDetRet> bradsFaceResults;
     private ArrayList<Point> bPoints;
-    private INDArray frameIm;
-    private INDArray bradIm;
-    private Mat currentImageMat;
     private Mat bradsFaceMat;
     private Bitmap bradsFaceBitmap;
+    private long start;
+    private int yRowStride;
+    private int uvRowStride;
+    private int uvPixelStride;
+
+    private int lastLeft = 0;
+    private int lastRight = 0;
+    private int lastTop = 0;
+    private int lastBottom = 0;
+
+    private int drawWidth = 0;
+    private int drawHeight = 0;
 
 
     public void initialize(
         final Context context,
         final AssetManager assetManager,
-        final Handler handler,
-        ImageView mImageView,
         Activity activity,
-        AutoFitTextureView textureView
-    ) {
-
-        this.mContext = context;
+        AutoFitTextureView textureView,
+        int rotation,
+        int sensorOrientation,
+        Size mPreviewSize) {
         this.assetManager = assetManager;
-        this.mImageView = mImageView;
-
-        this.mInferenceHandler = handler;
         this.activity = activity;
+
+        mImageView = activity.findViewById(R.id.the_preview_image);
+
         this.textureView = textureView;
+        this.rotation = rotation;
+        this.sensorOrientation = sensorOrientation;
+        mImageView.getLayoutParams().width = mPreviewSize.getWidth();
+        mImageView.getLayoutParams().height = mPreviewSize.getHeight();
         mFaceDet = new FaceDet(Constants.getFaceShapeModelPath());
 
         mFaceLandmardkPaint = new Paint();
@@ -113,9 +114,15 @@ public class OnGetImageListener implements OnImageAvailableListener {
         mFaceLandmardkPaint.setStrokeWidth(2);
         mFaceLandmardkPaint.setStyle(Paint.Style.STROKE);
 
+        drawWidth = mPreviewSize.getWidth();
+        drawHeight = mPreviewSize.getHeight();
+
         try {
             bradsFaceMat = loadResource(context, R.drawable.brad_face, CV_LOAD_IMAGE_COLOR);
-            bradsFaceBitmap = matToBitmap(bradsFaceMat);
+            Imgproc.cvtColor(bradsFaceMat, bradsFaceMat, Imgproc.COLOR_BGR2RGB);
+
+            bradsFaceBitmap = Bitmap.createBitmap(bradsFaceMat.width(), bradsFaceMat.height(), Config.ARGB_8888);
+            Utils.matToBitmap(bradsFaceMat, bradsFaceBitmap);
 
             FaceDet faceDet = new FaceDet(Constants.getFaceShapeModelPath());
             this.bradsFaceResults = faceDet.detect(bradsFaceBitmap);
@@ -135,7 +142,7 @@ public class OnGetImageListener implements OnImageAvailableListener {
         }
     }
 
-    public void drawToImageView(final Bitmap bitmap) {
+    private void drawToImageView(final Bitmap bitmap) {
         this.activity.runOnUiThread(() -> {
             mImageView.getLayoutParams().width = textureView.getWidth();
             mImageView.getLayoutParams().height = textureView.getHeight();
@@ -151,7 +158,6 @@ public class OnGetImageListener implements OnImageAvailableListener {
         try {
             image = reader.acquireLatestImage();
 
-
             if (image == null) {
                 return;
             }
@@ -161,6 +167,8 @@ public class OnGetImageListener implements OnImageAvailableListener {
                 image.close();
                 return;
             }
+
+            this.start = System.currentTimeMillis();
             mIsComputing = true;
 
             final Plane[] planes = image.getPlanes();
@@ -173,7 +181,6 @@ public class OnGetImageListener implements OnImageAvailableListener {
                 Log.d(TAG, String.format("Initializing at size %dx%d", mPreviewWidth, mPreviewHeight));
                 mRGBBytes = new int[mPreviewWidth * mPreviewHeight];
                 mRGBframeBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
-                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
 
                 mYUVBytes = new byte[planes.length][];
                 for (int i = 0; i < planes.length; ++i) {
@@ -185,113 +192,222 @@ public class OnGetImageListener implements OnImageAvailableListener {
                 planes[i].getBuffer().get(mYUVBytes[i]);
             }
 
-            final int yRowStride = planes[0].getRowStride();
-            final int uvRowStride = planes[1].getRowStride();
-            final int uvPixelStride = planes[1].getPixelStride();
-            ImageUtils.convertYUV420ToARGB8888(
-                mYUVBytes[0],
-                mYUVBytes[1],
-                mYUVBytes[2],
-                mRGBBytes,
-                mPreviewWidth,
-                mPreviewHeight,
-                yRowStride,
-                uvRowStride,
-                uvPixelStride,
-                false);
-
-            mRGBframeBitmap.setPixels(mRGBBytes, 0, mPreviewWidth, 0, 0, mPreviewWidth, mPreviewHeight);
-            currentImageMat = bitmapToMat(mRGBframeBitmap, CV_LOAD_IMAGE_COLOR);
-
+            yRowStride = planes[0].getRowStride();
+            uvRowStride = planes[1].getRowStride();
+            uvPixelStride = planes[1].getPixelStride();
 
             image.close();
+
+            ((Runnable) this::postImageUpdate).run();
+
+//            mInferenceHandler.post(this::postImageUpdate);
         } catch (final Exception e) {
             if (image != null) {
                 image.close();
             }
             Log.e(TAG, "Exception!", e);
-            Trace.endSection();
             return;
         }
 
-        mInferenceHandler.post(this::postImageUpdate);
 
     }
 
-    private Mat arrayToMat(int[] array) {
-        Mat mat = new Mat(array.length, array.length, CvType.CV_8UC3);
-        return mat;
+    private void resetLast() {
+        Log.d(TAG, "resetLast");
+        lastLeft = 0;
+        lastRight = 0;
+        lastTop = 0;
+        lastBottom = 0;
+    }
+
+    private void increaseLast() {
+        Log.d(TAG, "increaseLast");
+        lastLeft -= 20;
+        lastRight += 20;
+        lastTop -= 20;
+        lastBottom += 20;
+    }
+
+    private Bitmap getLocalBitmap() {
+        ImageUtils.convertYUV420ToARGB8888(
+            mYUVBytes[0],
+            mYUVBytes[1],
+            mYUVBytes[2],
+            mRGBBytes,
+            mPreviewWidth,
+            mPreviewHeight,
+            yRowStride,
+            uvRowStride,
+            uvPixelStride,
+            false);
+
+        Bitmap correct;
+        mRGBframeBitmap.setPixels(mRGBBytes, 0, mPreviewWidth, 0, 0, mPreviewWidth, mPreviewHeight);
+        if(rotation == 0 && sensorOrientation == 270) {
+            Matrix matrix = new Matrix();
+            matrix.postRotate(-90, mPreviewWidth / 2, mPreviewHeight / 2);
+            correct = Bitmap.createBitmap(mRGBframeBitmap,
+                0,
+                0,
+                mRGBframeBitmap.getWidth(),
+                mRGBframeBitmap.getHeight(),
+                matrix,
+                true);
+        } else {
+            correct = mRGBframeBitmap;
+        }
+
+
+        if (lastLeft > 0) {
+            try {
+                int width = lastRight - lastLeft;
+                int height = lastBottom - lastTop;
+
+                int size = width * height;
+                int[] localBytes = new int[size];
+                int[] rbgBytes = new int[correct.getWidth() * correct.getHeight()];
+
+                correct.getPixels(rbgBytes, 0, width, lastLeft, lastTop, width, height);
+
+                System.arraycopy(rbgBytes, 0, localBytes, 0, localBytes.length);
+
+                Bitmap local = Bitmap.createBitmap(width, height, Config.ARGB_8888);
+                local.setPixels(rbgBytes, 0, width, 0, 0, width, height);
+                Log.d(TAG, "worked");
+                return local;
+            } catch (Exception e) {
+                Log.d(TAG, "didn't work");
+                Log.d(TAG, e.getMessage());
+                resetLast();
+                return correct;
+            }
+        }
+        return correct;
     }
 
     private void postImageUpdate() {
-
-        List<VisionDetRet> results;
-        synchronized (OnGetImageListener.this) {
-            results = mFaceDet.detect(mRGBframeBitmap);
-        }
+        Bitmap localBitmap = getLocalBitmap();
+        List<VisionDetRet> results = mFaceDet.detect(localBitmap);
 
         // Draw on bitmap
-        if (results != null) {
-            if(results.size() > 0) {
-//                mMutableBitmap = Bitmap.createBitmap(mPreviewWidth, mPreviewHeight, Config.ARGB_8888);
 
-//                Canvas canvas = new Canvas(mMutableBitmap);
-
-                ArrayList<Point> landmarks = null;
-                for (final VisionDetRet ret : results) {
-
-//                                float resizeRatio = 1.0f;
-//                                Rect bounds = new Rect();
-//                                bounds.left = (int) (ret.getLeft() * resizeRatio);
-//                                bounds.top = (int) (ret.getTop() * resizeRatio);
-//                                bounds.right = (int) (ret.getRight() * resizeRatio);
-//                                bounds.bottom = (int) (ret.getBottom() * resizeRatio);
-//
-//
-//
-//                                canvas.drawRect(bounds, mFaceLandmardkPaint);
-//
-//                                // Draw landmark
-                    landmarks = ret.getFaceLandmarks();
-//                                for (Point point : landmarks) {
-//                                    int pointX = (int) (point.x * resizeRatio);
-//                                    int pointY = (int) (point.y * resizeRatio);
-//                                    canvas.drawCircle(pointX, pointY, 2, mFaceLandmardkPaint);
-//                                }
-
-                }
-                if(landmarks != null) {
-                    Bitmap newImage = processResult(landmarks, currentImageMat);
-
-//                    Matrix matrix = new Matrix();
-//                    matrix.postScale(
-//                        -1,
-//                        1,
-//                        mPreviewWidth / 2,
-//                        mPreviewHeight / 2);
-//                    mMutableBitmap = Bitmap.createBitmap(mMutableBitmap,
-//                        0,
-//                        0,
-//                        mMutableBitmap.getWidth(),
-//                        mMutableBitmap.getHeight(),
-//                        matrix,
-//                        true);
-
-                    drawToImageView(newImage);
-                }
+        if(results != null && results.size() > 0) {
+            ArrayList<Point> landmarks = null;
+            int left = 0;
+            int right = 0;
+            int top = 0;
+            int bottom = 0;
+            for (final VisionDetRet ret : results) {
+                landmarks = ret.getFaceLandmarks();
+                left = ret.getLeft();
+                right = ret.getRight();
+                top = ret.getTop();
+                bottom = ret.getBottom();
             }
 
+
+            if(landmarks != null) {
+                Mat currentImageMat = new Mat();
+                Utils.bitmapToMat(localBitmap, currentImageMat);
+                Imgproc.cvtColor(currentImageMat, currentImageMat, Imgproc.COLOR_RGBA2BGR);
+
+                Bitmap newImage = processResult(landmarks, currentImageMat);
+
+                mMutableBitmap = Bitmap.createBitmap(drawWidth, drawHeight, Config.ARGB_8888);
+                Canvas c = new Canvas(mMutableBitmap);
+                c.drawBitmap(newImage, lastLeft, lastTop, new Paint());
+
+//                drawDebug(c, landmarks);
+
+                Matrix matrix = new Matrix();
+                matrix.postScale(
+                    -1,
+                    1,
+                    mMutableBitmap.getWidth() / 2,
+                    mMutableBitmap.getHeight() / 2);
+
+                mMutableBitmap = Bitmap.createBitmap(mMutableBitmap,
+                    0,
+                    0,
+                    mMutableBitmap.getWidth(),
+                    mMutableBitmap.getHeight(),
+                    matrix,
+                    true);
+
+                drawToImageView(mMutableBitmap);
+                updateLast(left, right, top, bottom);
+            }
+        } else {
+            increaseLast();
         }
 
+
+        long time = System.currentTimeMillis() - start;
+
+        Log.d(TAG, Long.toString(time));
         mIsComputing = false;
+    }
+
+    private void drawDebug(Canvas c, ArrayList<Point> landmarks) {
+        for(Point p : landmarks) {
+            c.drawCircle(lastLeft + p.x, lastTop + p.y, 3, mFaceLandmardkPaint);
+        }
+
+        c.drawLine(0, 0, drawWidth, drawHeight, mFaceLandmardkPaint);
+        c.drawLine(drawWidth, 0, 0, drawHeight, mFaceLandmardkPaint);
+
+        c.drawLine(lastLeft, lastTop, lastRight , lastTop, mFaceLandmardkPaint);
+        c.drawLine(lastRight, lastTop, lastRight, lastBottom, mFaceLandmardkPaint);
+        c.drawLine(lastRight, lastBottom, lastLeft, lastBottom, mFaceLandmardkPaint);
+        c.drawLine(lastLeft, lastBottom, lastLeft, lastTop, mFaceLandmardkPaint);
+
+        c.drawCircle(drawWidth / 2, drawHeight / 2, 10, mFaceLandmardkPaint);
+
+    }
+
+    private void updateLast(int left, int right, int top, int bottom) {
+        if(lastLeft > 0) {
+            int newLeft = lastLeft + left;
+            lastRight = lastLeft + right;
+            lastLeft = newLeft;
+
+            int newTop = lastTop + top;
+            lastBottom = lastTop + bottom;
+            lastTop = newTop;
+
+            if (lastLeft < 0) {
+                lastLeft = 1;
+            }
+            if(lastRight > drawWidth) {
+                lastRight = drawWidth;
+            }
+            if(lastTop < 0) {
+                lastTop = 1;
+            }
+            if(lastBottom > drawHeight) {
+                lastBottom = drawHeight;
+            }
+
+            if(lastRight - lastLeft > 500) {
+                resetLast();
+            }
+        } else {
+            lastLeft = left;
+            lastRight = right;
+            lastTop = top;
+            lastBottom = bottom;
+        }
     }
 
     private Bitmap processResult(ArrayList<Point> dPoints, Mat currentImageMat) {
         float[][] points1 = pointsToFloat(dPoints);
         float[][] points2 = pointsToFloat(bPoints);
         FaceSwapper f = new FaceSwapper(currentImageMat, bradsFaceMat, points1, points2);
-        Mat swappedImage = f.getSwappedImage();
-        return matToBitmap(swappedImage);
+        Mat faceMask = f.getFaceMask();
+        Imgproc.cvtColor(faceMask, faceMask, Imgproc.COLOR_BGRA2RGBA);
+        Bitmap faceMaskBitmap = Bitmap.createBitmap(faceMask.width(), faceMask.height(), Config.ARGB_8888);
+        Utils.matToBitmap(faceMask, faceMaskBitmap, true);
+        return faceMaskBitmap;
     }
 
     private float[][] pointsToFloat(ArrayList<Point> points) {
@@ -304,13 +420,4 @@ public class OnGetImageListener implements OnImageAvailableListener {
         return f;
     }
 
-    private INDArray pointsToNd4j(ArrayList<Point> points) {
-        float[][] fPoints = new float[points.size()][2];
-        for(int i = 0; i < points.size(); i ++) {
-            Point p = points.get(i);
-            fPoints[i][0] = p.x;
-            fPoints[i][1] = p.y;
-        }
-        return Nd4j.create(fPoints);
-    }
 }

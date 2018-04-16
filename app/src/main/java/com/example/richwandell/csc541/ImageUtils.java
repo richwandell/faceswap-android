@@ -55,20 +55,22 @@ public class ImageUtils {
             for (int c = 0; c < m.cols(); c++) {
                 abgr = m.get(ro, c);
                 if(type == CvType.CV_8UC4) {
-                    a = (int)abgr[0];
-                    b = (int)abgr[1];
-                    g = (int)abgr[2];
-                    r = (int)abgr[3];
+                    b = (int)abgr[0] > 0 ? (int)abgr[0] : 0;
+                    g = (int)abgr[1] > 0 ? (int)abgr[1] : 0;
+                    r = (int)abgr[2] > 0 ? (int)abgr[2] : 0;
+                    a = (int)abgr[3] > 0 ? (int)abgr[3] : 0;
                 } else if(type == CvType.CV_8UC3) {
-                    a = 255;
                     b = (int)abgr[0];
                     g = (int)abgr[1];
                     r = (int)abgr[2];
+                    a = 255;
                 }
-                int color = ((a << 24) & 0xFF000000) +
-                    ((r << 16) & 0x00FF0000) +
-                    ((g << 8) & 0x0000FF00) +
-                    (b & 0x000000FF);
+//                int color = ((a << 24) & 0xFF000000) +
+//                    ((r << 16) & 0x00FF0000) +
+//                    ((g << 8) & 0x0000FF00) +
+//                    (b & 0x000000FF);
+
+                int color = (a & 0xff) << 24 | (r & 0xff) << 16 | (g & 0xff) << 8 | (b & 0xff);
                 pixels[index] = color;
                 index++;
             }

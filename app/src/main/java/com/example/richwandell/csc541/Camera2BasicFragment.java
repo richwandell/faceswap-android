@@ -23,8 +23,6 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
-import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.Point;
@@ -58,7 +56,6 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -353,7 +350,6 @@ public class Camera2BasicFragment extends Fragment
         }
 
     };
-    private ImageView mImageView;
 
 
 
@@ -397,6 +393,7 @@ public class Camera2BasicFragment extends Fragment
         List<Size> bigEnough = new ArrayList<>();
         // Collect the supported resolutions that are smaller than the preview Surface
         List<Size> notBigEnough = new ArrayList<>();
+
         int w = aspectRatio.getWidth();
         int h = aspectRatio.getHeight();
         for (Size option : choices) {
@@ -408,11 +405,12 @@ public class Camera2BasicFragment extends Fragment
                 } else {
                     notBigEnough.add(option);
                 }
+
             }
         }
 
-        // Pick the smallest of those big enough. If there is no one big enough, pick the
-        // largest of those not big enough.
+//         Pick the smallest of those big enough. If there is no one big enough, pick the
+//         largest of those not big enough.
         if (bigEnough.size() > 0) {
             return Collections.min(bigEnough, new CompareSizesByArea());
         } else if (notBigEnough.size() > 0) {
@@ -421,6 +419,8 @@ public class Camera2BasicFragment extends Fragment
             Log.e(TAG, "Couldn't find any suitable preview size");
             return choices[0];
         }
+
+
     }
 
     public static Camera2BasicFragment newInstance() {
@@ -436,9 +436,7 @@ public class Camera2BasicFragment extends Fragment
     @Override
     public void onViewCreated(final View view, Bundle savedInstanceState) {
         view.findViewById(R.id.picture).setOnClickListener(this);
-        view.findViewById(R.id.info).setOnClickListener(this);
         mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
-        mImageView = (ImageView)view.findViewById(R.id.the_preview_image);
     }
 
     @Override
@@ -501,6 +499,7 @@ public class Camera2BasicFragment extends Fragment
     private void setUpCameraOutputs(int width, int height) {
         Activity activity = getActivity();
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+
         try {
             for (String cameraId : manager.getCameraIdList()) {
                 CameraCharacteristics characteristics
@@ -522,6 +521,7 @@ public class Camera2BasicFragment extends Fragment
                 Size largest = Collections.max(
                     Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
                     new CompareSizesByArea());
+
                 mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                     ImageFormat.JPEG, /*maxImages*/2);
                 mImageReader.setOnImageAvailableListener(
@@ -530,21 +530,16 @@ public class Camera2BasicFragment extends Fragment
                 // Find out if we need to swap dimension to get the preview size relative to sensor
                 // coordinate.
                 int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+                Log.d(TAG, Integer.toString(displayRotation));
                 //noinspection ConstantConditions
                 mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                Log.d(TAG, Integer.toString(mSensorOrientation));
                 boolean swappedDimensions = false;
                 switch (displayRotation) {
                     case Surface.ROTATION_0:
                     case Surface.ROTATION_180:
-                        if (mSensorOrientation == 90 || mSensorOrientation == 270) {
-                            swappedDimensions = true;
-                        }
-                        break;
                     case Surface.ROTATION_90:
                     case Surface.ROTATION_270:
-                        if (mSensorOrientation == 0 || mSensorOrientation == 180) {
-                            swappedDimensions = true;
-                        }
                         break;
                     default:
                         Log.e(TAG, "Display rotation is invalid: " + displayRotation);
@@ -581,13 +576,11 @@ public class Camera2BasicFragment extends Fragment
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
-                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    mTextureView.setAspectRatio(
-                        mPreviewSize.getWidth(), mPreviewSize.getHeight());
-                } else {
-                    mTextureView.setAspectRatio(
-                        mPreviewSize.getHeight(), mPreviewSize.getWidth());
-                }
+//                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                    mTextureView.setAspectRatio(mPreviewSize.getWidth(), mPreviewSize.getHeight());
+//                } else {
+//                    mTextureView.setAspectRatio(mPreviewSize.getHeight(), mPreviewSize.getWidth());
+//                }
 
                 // Check if the flash is supported.
                 Boolean available = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
@@ -699,25 +692,26 @@ public class Camera2BasicFragment extends Fragment
             Surface surface = new Surface(texture);
 
             // We set up a CaptureRequest.Builder with the output Surface.
-            mPreviewRequestBuilder
-                = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mPreviewRequestBuilder.addTarget(surface);
 
             // Create the reader for the preview frames.
-            mImageReader =
-                ImageReader.newInstance(
-                    mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 2);
+            mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(), mPreviewSize.getHeight(), ImageFormat.YUV_420_888, 2);
 
             mImageReader.setOnImageAvailableListener(mOnGetPreviewListener, mBackgroundHandler);
             mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
 
+            Activity activity = getActivity();
+            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+
             mOnGetPreviewListener.initialize(
                 getActivity().getApplicationContext(),
                 getActivity().getAssets(),
-                mBackgroundHandler,
-                mImageView,
                 getActivity(),
-                mTextureView
+                mTextureView,
+                rotation,
+                mSensorOrientation,
+                mPreviewSize
             );
 
             // Here, we create a CameraCaptureSession for camera preview.
@@ -775,22 +769,38 @@ public class Camera2BasicFragment extends Fragment
             return;
         }
         int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-        Matrix matrix = new Matrix();
+
+        Log.d(TAG, "rotation: " + Integer.toString(rotation));
+        Log.d(TAG, "sensor orientation: " + Integer.toString(mSensorOrientation));
+
         RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
         RectF bufferRect = new RectF(0, 0, mPreviewSize.getHeight(), mPreviewSize.getWidth());
         float centerX = viewRect.centerX();
         float centerY = viewRect.centerY();
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
-            float scale = Math.max(
-                (float) viewHeight / mPreviewSize.getHeight(),
-                (float) viewWidth / mPreviewSize.getWidth());
+        Matrix matrix = new Matrix();
+
+        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+        float scale;
+
+        if(mSensorOrientation == 90 && rotation == 0) {
+            scale = (float) viewWidth / mPreviewSize.getWidth();
             matrix.postScale(scale, scale, centerX, centerY);
-            matrix.postRotate(90 * (rotation - 2), centerX, centerY);
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180, centerX, centerY);
+            matrix.postRotate(mSensorOrientation, centerX, centerY);
+        }else if(mSensorOrientation == 90 && rotation == 1) {
+            scale = (float) viewHeight / mPreviewSize.getHeight();
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(mSensorOrientation, centerX, centerY);
+        } else if(mSensorOrientation == 270 && rotation == 0) {
+            scale = (float) viewWidth / mPreviewSize.getWidth();
+            Log.d(TAG, Float.toString(scale));
+            matrix.postScale(1.3f, 1.3f, centerX, centerY);
+        } else if(mSensorOrientation == 270 && rotation == 1) {
+            scale = (float) viewHeight / mPreviewSize.getHeight();
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(-90, centerX, centerY);
         }
+
         mTextureView.setTransform(matrix);
     }
 
@@ -858,7 +868,12 @@ public class Camera2BasicFragment extends Fragment
 
             // Orientation
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+
+            int orientation = getOrientation(rotation);
+
+            Log.d(TAG, "orientation: " + Integer.toString(orientation));
+
+            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, orientation);
 
             CameraCaptureSession.CaptureCallback CaptureCallback
                 = new CameraCaptureSession.CaptureCallback() {
@@ -921,16 +936,6 @@ public class Camera2BasicFragment extends Fragment
         switch (view.getId()) {
             case R.id.picture: {
                 takePicture();
-                break;
-            }
-            case R.id.info: {
-                Activity activity = getActivity();
-                if (null != activity) {
-                    new AlertDialog.Builder(activity)
-                        .setMessage(R.string.intro_message)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show();
-                }
                 break;
             }
         }

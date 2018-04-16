@@ -6,34 +6,19 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Point;
-import android.media.Image;
-import android.media.MediaMetadataRetriever;
+import android.os.Bundle;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
-import android.widget.TextView;
-import android.widget.Toast;
+import android.view.WindowManager;
 
-import com.twelvemonkeys.image.ImageUtil;
 import com.tzutalin.dlib.Constants;
 import com.tzutalin.dlib.FaceDet;
 import com.tzutalin.dlib.VisionDetRet;
 
-import org.bytedeco.javacv.AndroidFrameConverter;
-import org.bytedeco.javacv.OpenCVFrameConverter;
-import org.opencv.core.CvType;
-import org.opencv.core.Mat;
-import org.opencv.imgcodecs.Imgcodecs;
-
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-
-import static org.opencv.imgcodecs.Imgcodecs.CV_LOAD_IMAGE_COLOR;
-import static org.opencv.imgcodecs.Imgcodecs.CV_LOAD_IMAGE_UNCHANGED;
-import static org.opencv.imgcodecs.Imgcodecs.imwrite;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -52,10 +37,14 @@ public class MainActivity extends AppCompatActivity {
 //        System.loadLibrary("native-lib");
 //    }
 
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
 
         if(verifyPermissions(this)) {
             while(!copyLandmark()){}
@@ -142,4 +131,5 @@ public class MainActivity extends AppCompatActivity {
             showCamera();
         }
     }
+
 }
