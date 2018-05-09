@@ -15,7 +15,6 @@ import java.util.stream.IntStream;
 import static org.bytedeco.javacpp.opencv_core.CV_REDUCE_AVG;
 import static org.opencv.core.CvType.CV_8U;
 import static org.opencv.core.CvType.CV_8UC3;
-import static org.opencv.core.CvType.CV_8UC4;
 import static org.opencv.imgproc.Imgproc.*;
 
 
@@ -23,7 +22,7 @@ public class FaceSwapper {
 
     private final int FEATHER_AMOUNT = 11;
 
-    private final double COLOUR_CORRECT_BLUR_FRAC = 2.0;
+    private final double COLOUR_CORRECT_BLUR_FRAC = 1;
 
     private static List<Integer> FACE_POINTS = IntStream.rangeClosed(17, 67)
         .boxed().collect(Collectors.toList());
@@ -268,15 +267,16 @@ public class FaceSwapper {
     }
 
     private Mat getCombinedMask(Mat mask1, Mat warpedMask2) {
+
         Mat dest = new Mat();
-        Core.max(mask1, warpedMask2, dest);
+        Core.add(mask1, warpedMask2, dest);
         return dest;
     }
 
-    private Mat warpIm(Mat faceMask, Mat m, Size size) {
-        Mat dest = new Mat(size, CV_8UC3);
+    private Mat warpIm(Mat im, Mat m, Size size) {
+        Mat dest = new Mat(size, im.type());
         Imgproc.warpAffine(
-            faceMask,
+            im,
             dest,
             m,
             size,
@@ -284,7 +284,6 @@ public class FaceSwapper {
             5,
             new Scalar(1, 1, 1)
         );
-        dest.convertTo(dest, CV_TYPE);
 
         return dest;
     }

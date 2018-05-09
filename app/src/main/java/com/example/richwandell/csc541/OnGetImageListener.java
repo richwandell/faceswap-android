@@ -19,6 +19,7 @@ import android.media.ImageReader.OnImageAvailableListener;
 import android.os.Handler;
 import android.util.Log;
 import android.util.Size;
+import android.view.View;
 import android.widget.ImageView;
 
 import com.tzutalin.dlib.Constants;
@@ -50,6 +51,10 @@ public class OnGetImageListener implements OnImageAvailableListener {
     }
 
     private static final String TAG = "rdebug";
+
+    private final float SCALE_DOWN = 0.5f;
+
+    private final float SCALE_UP = 2F;
 
     private int mPreviewWidth = 0;
     private int mPreviewHeight = 0;
@@ -88,6 +93,8 @@ public class OnGetImageListener implements OnImageAvailableListener {
     private int drawWidth = 0;
     private int drawHeight = 0;
 
+    private boolean debug = false;
+
 
     public void initialize(
         final Context context,
@@ -116,6 +123,13 @@ public class OnGetImageListener implements OnImageAvailableListener {
 
         drawWidth = mPreviewSize.getWidth();
         drawHeight = mPreviewSize.getHeight();
+
+        activity.findViewById(R.id.picture).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                debug = !debug;
+            }
+        });
 
         try {
             bradsFaceMat = loadResource(context, R.drawable.brad_face, CV_LOAD_IMAGE_COLOR);
@@ -254,7 +268,15 @@ public class OnGetImageListener implements OnImageAvailableListener {
                 matrix,
                 true);
         } else {
-            correct = mRGBframeBitmap;
+            Matrix matrix = new Matrix();
+            matrix.postScale( SCALE_DOWN, SCALE_DOWN);
+            correct = Bitmap.createBitmap(mRGBframeBitmap,
+                0,
+                0,
+                mRGBframeBitmap.getWidth(),
+                mRGBframeBitmap.getHeight(),
+                matrix,
+                true);
         }
 
 
@@ -309,18 +331,32 @@ public class OnGetImageListener implements OnImageAvailableListener {
             if(landmarks != null) {
                 Mat currentImageMat = new Mat();
                 Utils.bitmapToMat(localBitmap, currentImageMat);
+
                 Imgproc.cvtColor(currentImageMat, currentImageMat, Imgproc.COLOR_RGBA2BGR);
 
                 Bitmap newImage = processResult(landmarks, currentImageMat);
 
+                Matrix matrix = new Matrix();
+                matrix.postScale(SCALE_UP,SCALE_UP);
+
+                newImage = Bitmap.createBitmap(newImage,
+                    0,
+                    0,
+                    newImage.getWidth(),
+                    newImage.getHeight(),
+                    matrix,
+                    true);
+
                 mMutableBitmap = Bitmap.createBitmap(drawWidth, drawHeight, Config.ARGB_8888);
                 Canvas c = new Canvas(mMutableBitmap);
-                c.drawBitmap(newImage, lastLeft, lastTop, new Paint());
+                c.drawBitmap(newImage, lastLeft * SCALE_UP, lastTop * SCALE_UP, new Paint());
 
-//                drawDebug(c, landmarks);
+                if(debug) {
+                    drawDebug(c, landmarks);
+                }
 
-                Matrix matrix = new Matrix();
-                matrix.postScale(
+                Matrix matrix1 = new Matrix();
+                matrix1.postScale(
                     -1,
                     1,
                     mMutableBitmap.getWidth() / 2,
@@ -331,7 +367,7 @@ public class OnGetImageListener implements OnImageAvailableListener {
                     0,
                     mMutableBitmap.getWidth(),
                     mMutableBitmap.getHeight(),
-                    matrix,
+                    matrix1,
                     true);
 
                 drawToImageView(mMutableBitmap);
@@ -350,16 +386,16 @@ public class OnGetImageListener implements OnImageAvailableListener {
 
     private void drawDebug(Canvas c, ArrayList<Point> landmarks) {
         for(Point p : landmarks) {
-            c.drawCircle(lastLeft + p.x, lastTop + p.y, 3, mFaceLandmardkPaint);
+            c.drawCircle(lastLeft * SCALE_UP + p.x * SCALE_UP, lastTop * SCALE_UP + p.y * SCALE_UP, 3, mFaceLandmardkPaint);
         }
 
         c.drawLine(0, 0, drawWidth, drawHeight, mFaceLandmardkPaint);
         c.drawLine(drawWidth, 0, 0, drawHeight, mFaceLandmardkPaint);
 
-        c.drawLine(lastLeft, lastTop, lastRight , lastTop, mFaceLandmardkPaint);
-        c.drawLine(lastRight, lastTop, lastRight, lastBottom, mFaceLandmardkPaint);
-        c.drawLine(lastRight, lastBottom, lastLeft, lastBottom, mFaceLandmardkPaint);
-        c.drawLine(lastLeft, lastBottom, lastLeft, lastTop, mFaceLandmardkPaint);
+        c.drawLine(lastLeft * SCALE_UP, lastTop * SCALE_UP, lastRight * SCALE_UP , lastTop * SCALE_UP, mFaceLandmardkPaint);
+        c.drawLine(lastRight * SCALE_UP, lastTop * SCALE_UP, lastRight * SCALE_UP, lastBottom * SCALE_UP, mFaceLandmardkPaint);
+        c.drawLine(lastRight * SCALE_UP, lastBottom * SCALE_UP, lastLeft * SCALE_UP, lastBottom * SCALE_UP, mFaceLandmardkPaint);
+        c.drawLine(lastLeft * SCALE_UP, lastBottom * SCALE_UP, lastLeft * SCALE_UP, lastTop * SCALE_UP, mFaceLandmardkPaint);
 
         c.drawCircle(drawWidth / 2, drawHeight / 2, 10, mFaceLandmardkPaint);
 
@@ -394,8 +430,8 @@ public class OnGetImageListener implements OnImageAvailableListener {
         } else {
             lastLeft = left;
             lastRight = right;
-            lastTop = top;
-            lastBottom = bottom;
+            lastTop = top - 20;
+            lastBottom = bottom + 20;
         }
     }
 
@@ -406,7 +442,9 @@ public class OnGetImageListener implements OnImageAvailableListener {
         Mat faceMask = f.getFaceMask();
         Imgproc.cvtColor(faceMask, faceMask, Imgproc.COLOR_BGRA2RGBA);
         Bitmap faceMaskBitmap = Bitmap.createBitmap(faceMask.width(), faceMask.height(), Config.ARGB_8888);
+
         Utils.matToBitmap(faceMask, faceMaskBitmap, true);
+
         return faceMaskBitmap;
     }
 
